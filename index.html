@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<title>Legenda ao Vivo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: palco de vídeo no topo, controles em uma faixa, histórico embaixo. Pensado para celular em pé. */
+:root{
+  --bg:#0d1117; --panel:#161b24; --line:#262e3b; --fg:#e8ebf0; --muted:#8b95a5;
+  --accent:#ffd23f; --ok:#4cc38a; --bad:#ff6b5e;
+  --font:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"DM Mono",ui-monospace,Menlo,Consolas,monospace;
+  --sub-size:20px; --sub-color:#ffffff; --sub-bg:.6;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font);-webkit-text-size-adjust:100%}
+body{min-height:100dvh;padding:max(10px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left));display:flex;flex-direction:column;gap:12px;max-width:760px;margin:0 auto}
+button,select,input{font:inherit;color:inherit}
+header{display:flex;align-items:center;justify-content:space-between;gap:10px}
+h1{font-size:18px;margin:0;letter-spacing:.2px}
+.state{font-family:var(--mono);font-size:12px;color:var(--muted);display:flex;align-items:center;gap:7px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted)}
+.state.on .dot{background:var(--bad);box-shadow:0 0 0 4px rgba(255,107,94,.2);animation:pulse 1.4s infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 8px rgba(255,107,94,0)}}
+@media (prefers-reduced-motion:reduce){.state.on .dot{animation:none}}
+
+.stage{position:relative;background:#000;border:1px solid var(--line);border-radius:10px;overflow:hidden;aspect-ratio:16/9;width:100%}
+.stage:fullscreen{border:0;border-radius:0;aspect-ratio:auto}
+video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
+.empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:16px;color:var(--muted);font-size:14px;line-height:1.45}
+.empty b{color:var(--fg);display:block;margin-bottom:4px;font-size:15px}
+.subs{position:absolute;left:0;right:0;display:flex;justify-content:center;padding:0 10px;pointer-events:none}
+.subs[data-pos="bottom"]{bottom:8%}
+.subs[data-pos="middle"]{top:50%;transform:translateY(-50%)}
+.subs[data-pos="top"]{top:6%}
+.subs span{display:inline-block;max-width:94%;text-align:center;font-size:var(--sub-size);line-height:1.3;font-weight:700;color:var(--sub-color);background:rgba(0,0,0,var(--sub-bg));padding:.15em .55em;border-radius:6px;text-wrap:balance;text-shadow:0 1px 3px rgba(0,0,0,.8);transition:opacity .25s}
+.subs span.interim{opacity:.78}
+.subs span.orig{display:block;font-size:.6em;font-weight:400;opacity:.8;margin-top:.15em;font-family:var(--mono)}
+.subs[hidden]{display:none}
+.fs{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.55);border:0;border-radius:8px;width:38px;height:38px;display:grid;place-items:center;cursor:pointer}
+.fs svg{width:20px;height:20px}
+
+.bar{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{min-height:50px;border-radius:10px;border:1px solid var(--line);background:var(--panel);display:flex;align-items:center;justify-content:center;gap:8px;font-weight:700;cursor:pointer;padding:0 12px;text-align:center}
+.btn:active{transform:scale(.98)}
+.btn.main{background:var(--accent);border-color:var(--accent);color:#1a1500}
+.btn.main.on{background:var(--bad);border-color:var(--bad);color:#fff}
+.btn svg{width:20px;height:20px;flex:none}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input[type=file]{display:none}
+
+.row{display:flex;gap:10px;align-items:center}
+label.f{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted);flex:1;min-width:0}
+select{background:var(--panel);border:1px solid var(--line);border-radius:10px;min-height:46px;padding:0 10px;width:100%;color:var(--fg)}
+.note{font-size:13px;color:var(--muted);line-height:1.45;margin:0}
+.note.warn{color:var(--bad)}
+
+details{border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+summary{padding:13px 14px;font-weight:700;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";font-family:var(--mono);color:var(--muted)}
+details[open] summary::after{content:"–"}
+.inner{padding:0 14px 14px;display:flex;flex-direction:column;gap:14px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{min-height:40px;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:var(--bg);cursor:pointer}
+.chip[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}
+.sw{width:40px;height:40px;border-radius:50%;border:2px solid var(--line);cursor:pointer;padding:0}
+.sw[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 2px var(--bg) inset}
+.check{display:flex;align-items:center;gap:10px;min-height:40px}
+.check input{width:20px;height:20px;accent-color:var(--accent)}
+
+.log{display:flex;flex-direction:column;gap:8px;max-height:260px;overflow:auto}
+.item{border-top:1px solid var(--line);padding-top:8px}
+.item:first-child{border-top:0;padding-top:0}
+.item .pt{font-size:15px}
+.item .src{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+.item .pt{overflow-wrap:anywhere}
+.banner{border:1px solid var(--bad);border-radius:10px;padding:12px 14px;background:rgba(255,107,94,.08);font-size:14px;line-height:1.5}
+.banner b{display:block;margin-bottom:4px}
+.banner p{margin:0 0 6px;color:var(--muted)}
+.banner ol{margin:0;padding-left:20px}
+.banner[hidden]{display:none}
+.mini{font-size:13px;color:var(--muted);background:none;border:0;text-decoration:underline;cursor:pointer;align-self:flex-start;padding:4px 0}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Legenda ao Vivo</h1>
+  <div class="state" id="state"><span class="dot"></span><span id="stateTxt">parado</span></div>
+</header>
+
+<div class="stage" id="stage">
+  <video id="video" playsinline controls preload="metadata"></video>
+  <div class="empty" id="empty"><div><b>Nenhum vídeo aberto</b>Abra um vídeo do celular ou use só o microfone para legendar o que estiver tocando por perto.</div></div>
+  <div class="subs" id="subs" data-pos="bottom" hidden><span id="subTxt"></span></div>
+  <button class="fs" id="fsBtn" aria-label="Tela cheia" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+  </button>
+</div>
+
+<div class="bar">
+  <label class="btn" for="file">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="13" height="14" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg>
+    Abrir vídeo
+  </label>
+  <input type="file" id="file" accept="video/*,audio/*">
+  <button class="btn main" id="go" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg>
+    <span id="goTxt">Iniciar legenda</span>
+  </button>
+</div>
+
+<div class="row">
+  <label class="f">Idioma falado no vídeo
+    <select id="lang">
+      <option value="en-US">Inglês</option>
+      <option value="es-ES">Espanhol</option>
+      <option value="ja-JP">Japonês</option>
+      <option value="ko-KR">Coreano</option>
+      <option value="zh-CN">Chinês (mandarim)</option>
+      <option value="fr-FR">Francês</option>
+      <option value="de-DE">Alemão</option>
+      <option value="it-IT">Italiano</option>
+      <option value="ru-RU">Russo</option>
+      <option value="ar-SA">Árabe</option>
+      <option value="hi-IN">Hindi</option>
+      <option value="tr-TR">Turco</option>
+      <option value="pt-BR">Português (só transcrever)</option>
+    </select>
+  </label>
+</div>
+
+<div class="banner" id="secure" hidden>
+  <b>O microfone não funciona abrindo o arquivo direto</b>
+  <p>O navegador só libera o microfone em páginas com endereço seguro (https). Você abriu o app como arquivo do celular.</p>
+  <ol>
+    <li>Envie este arquivo para um site gratuito, como Netlify Drop (app.netlify.com/drop) ou GitHub Pages.</li>
+    <li>Abra o link https que o site gerar, no <b>Chrome</b>.</li>
+    <li>Toque em Iniciar legenda e permita o microfone.</li>
+  </ol>
+</div>
+
+<p class="note" id="msg"></p>
+
+<details>
+  <summary>Aparência da legenda</summary>
+  <div class="inner">
+    <label class="f">Tamanho
+      <input type="range" id="size" min="14" max="40" step="1" value="20">
+    </label>
+    <div>
+      <div class="note" style="margin-bottom:6px">Cor</div>
+      <div class="chips" id="colors">
+        <button class="sw" data-c="#ffffff" style="background:#fff" aria-label="Branco" aria-pressed="true"></button>
+        <button class="sw" data-c="#ffd23f" style="background:#ffd23f" aria-label="Amarelo" aria-pressed="false"></button>
+        <button class="sw" data-c="#7ee8fa" style="background:#7ee8fa" aria-label="Ciano" aria-pressed="false"></button>
+        <button class="sw" data-c="#9be28a" style="background:#9be28a" aria-label="Verde" aria-pressed="false"></button>
+      </div>
+    </div>
+    <div>
+      <div class="note" style="margin-bottom:6px">Posição</div>
+      <div class="chips" id="poss">
+        <button class="chip" data-p="top" aria-pressed="false">Topo</button>
+        <button class="chip" data-p="middle" aria-pressed="false">Meio</button>
+        <button class="chip" data-p="bottom" aria-pressed="true">Embaixo</button>
+      </div>
+    </div>
+    <label class="f">Fundo da legenda
+      <input type="range" id="bg" min="0" max="100" step="5" value="60">
+    </label>
+    <label class="check"><input type="checkbox" id="showOrig"> Mostrar também o texto original</label>
+    <button class="mini" id="demo" type="button">Ver exemplo na tela</button>
+  </div>
+</details>
+
+<details>
+  <summary>Histórico</summary>
+  <div class="inner">
+    <div class="log" id="log"><p class="note">As frases traduzidas aparecem aqui.</p></div>
+    <button class="mini" id="clear" type="button">Limpar histórico</button>
+  </div>
+</details>
+
+<script>
+(function(){
+  var $ = function(id){return document.getElementById(id)};
+  var video=$('video'), stage=$('stage'), subs=$('subs'), subTxt=$('subTxt'), msg=$('msg');
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var rec=null, want=false, useTrack=true, hideT=null, seq=0, liveT=null, lastLive='', lastShown='', wake=null;
+
+  /* ---------- preferências ---------- */
+  var prefs={size:20,color:'#ffffff',pos:'bottom',bg:60,orig:false,lang:'en-US'};
+  try{ Object.assign(prefs, JSON.parse(localStorage.getItem('legenda')||'{}')); }catch(e){}
+  function save(){ try{ localStorage.setItem('legenda',JSON.stringify(prefs)); }catch(e){} }
+  function applyPrefs(){
+    var r=document.documentElement.style;
+    r.setProperty('--sub-size',prefs.size+'px');
+    r.setProperty('--sub-color',prefs.color);
+    r.setProperty('--sub-bg',prefs.bg/100);
+    subs.dataset.pos=prefs.pos;
+    $('size').value=prefs.size; $('bg').value=prefs.bg; $('showOrig').checked=prefs.orig; $('lang').value=prefs.lang;
+    [].forEach.call(document.querySelectorAll('#colors .sw'),function(b){b.setAttribute('aria-pressed',b.dataset.c===prefs.color)});
+    [].forEach.call(document.querySelectorAll('#poss .chip'),function(b){b.setAttribute('aria-pressed',b.dataset.p===prefs.pos)});
+  }
+  applyPrefs();
+  $('size').oninput=function(){prefs.size=+this.value;applyPrefs();save()};
+  $('bg').oninput=function(){prefs.bg=+this.value;applyPrefs();save()};
+  $('showOrig').onchange=function(){prefs.orig=this.checked;save()};
+  $('lang').onchange=function(){prefs.lang=this.value;save(); if(want){restart()}};
+  $('colors').onclick=function(e){var b=e.target.closest('.sw');if(!b)return;prefs.color=b.dataset.c;applyPrefs();save()};
+  $('poss').onclick=function(e){var b=e.target.closest('.chip');if(!b)return;prefs.pos=b.dataset.p;applyPrefs();save()};
+  $('demo').onclick=function(){show('Assim ficam as legendas traduzidas no seu vídeo.','This is how the translated subtitles look.',false,4000)};
+
+  /* ---------- vídeo ---------- */
+  $('file').onchange=function(){
+    var f=this.files&&this.files[0]; if(!f)return;
+    if(video.dataset.url) URL.revokeObjectURL(video.dataset.url);
+    var u=URL.createObjectURL(f); video.dataset.url=u; video.src=u; video.load();
+    $('empty').hidden=true; setMsg('Vídeo carregado. Toque em Iniciar legenda e depois em play.');
+  };
+  $('fsBtn').onclick=function(){
+    try{
+      if(document.fullscreenElement){document.exitFullscreen()}
+      else if(stage.requestFullscreen){stage.requestFullscreen()}
+      else if(stage.webkitRequestFullscreen){stage.webkitRequestFullscreen()}
+    }catch(e){}
+  };
+
+  function setMsg(t,warn){msg.textContent=t||'';msg.className='note'+(warn?' warn':'')}
+  function setState(on,txt){ $('state').className='state'+(on?' on':''); $('stateTxt').textContent=txt; $('go').classList.toggle('on',on); $('goTxt').textContent=on?'Parar legenda':'Iniciar legenda'; }
+
+  /* ---------- legenda na tela ---------- */
+  function clip(t){ if(t.length<=170) return t; var c=t.slice(-170); var i=c.indexOf(' '); return '…'+(i>0?c.slice(i+1):c); }
+  function show(pt,src,interim,hold){
+    clearTimeout(hideT);
+    var txt=clip(pt);
+    subTxt.className=interim?'interim':'';
+    subTxt.textContent=txt;
+    if(prefs.orig&&src){var o=document.createElement('span');o.className='orig';o.textContent=clip(src);subTxt.appendChild(o)}
+    subs.hidden=false;
+    if(!interim){ hideT=setTimeout(function(){subs.hidden=true}, hold||Math.max(3500,txt.length*70)); }
+  }
+
+  /* ---------- tradução ---------- */
+  function tr(text, src){
+    var short=(src||'en').slice(0,2);
+    var u='https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=pt&dt=t&q='+encodeURIComponent(text);
+    return fetch(u).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){
+      return {text:j[0].map(function(x){return x[0]}).join(''), lang:j[2]};
+    }).catch(function(){
+      var m='https://api.mymemory.translated.net/get?q='+encodeURIComponent(text)+'&langpair='+short+'|pt-BR';
+      return fetch(m).then(function(r){return r.json()}).then(function(j){return {text:j.responseData.translatedText,lang:short}});
+    });
+  }
+  var langNames={en:'inglês',es:'espanhol',ja:'japonês',ko:'coreano',zh:'chinês','zh-CN':'chinês',fr:'francês',de:'alemão',it:'italiano',ru:'russo',ar:'árabe',hi:'hindi',tr:'turco',pt:'português'};
+
+  function isPT(){ return prefs.lang.indexOf('pt')===0 }
+
+  function live(text){
+    lastLive=text;
+    if(isPT()){ show(text,'',true); return; }
+    if(liveT) return;
+    liveT=setTimeout(function(){
+      liveT=null; var t=lastLive, my=++seq;
+      if(!t||t===lastShown) return;
+      tr(t,prefs.lang).then(function(r){ if(my!==seq) return; lastShown=t; show(r.text,t,true); }).catch(function(){});
+    },550);
+  }
+  function commit(text){
+    if(!text) return;
+    var my=++seq; lastLive=''; lastShown='';
+    if(isPT()){ show(text,'',false); addLog(text,''); return; }
+    tr(text,prefs.lang).then(function(r){
+      if(my<seq && false) return;
+      show(r.text,text,false); addLog(r.text,text);
+      if(r.lang && r.lang.slice(0,2)!==prefs.lang.slice(0,2)){
+        var n=langNames[r.lang]||langNames[(r.lang||'').slice(0,2)];
+        if(n) setMsg('A tradução detectou '+n+', mas o idioma escolhido é outro. Se a legenda sair confusa, troque o idioma falado.',true);
+      } else setMsg('');
+    }).catch(function(){ setMsg('Sem internet para traduzir. Confira a conexão.',true); });
+  }
+
+  function addLog(pt,src){
+    var box=$('log'); if(box.querySelector('p.note')) box.innerHTML='';
+    var d=document.createElement('div'); d.className='item';
+    var a=document.createElement('div'); a.className='pt'; a.textContent=pt;
+    d.appendChild(a);
+    if(src){var b=document.createElement('div'); b.className='src'; b.textContent=src; d.appendChild(b)}
+    box.insertBefore(d,box.firstChild);
+    while(box.children.length>60) box.removeChild(box.lastChild);
+  }
+  $('clear').onclick=function(){$('log').innerHTML='<p class="note">As frases traduzidas aparecem aqui.</p>'};
+
+  /* ---------- reconhecimento de voz ---------- */
+  function getTrack(){
+    try{
+      if(video.src && video.captureStream){
+        var t=video.captureStream().getAudioTracks();
+        if(t && t[0]) return t[0];
+      }
+    }catch(e){}
+    return null;
+  }
+  function begin(){
+    rec=new SR(); rec.continuous=true; rec.interimResults=true; rec.lang=prefs.lang; rec.maxAlternatives=1;
+    rec.onresult=function(e){
+      var fin='',inter='';
+      for(var i=e.resultIndex;i<e.results.length;i++){
+        var r=e.results[i];
+        if(r.isFinal) fin+=r[0].transcript; else inter+=r[0].transcript;
+      }
+      if(fin) commit(fin.trim());
+      if(inter) live(inter.trim());
+    };
+    rec.onerror=function(e){
+      if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+        want=false; setState(false,'parado');
+        setMsg(window.isSecureContext?'O navegador bloqueou o microfone. Toque no cadeado ao lado do endereço, permita o microfone e tente de novo.':'O microfone só funciona em página https. Veja o aviso acima.',true);
+      } else if(e.error==='audio-capture' && useTrack){
+        useTrack=false;
+      } else if(e.error==='network'){
+        setMsg('O reconhecimento de voz precisa de internet.',true);
+      }
+    };
+    rec.onend=function(){
+      if(want){ setTimeout(function(){ if(want){ try{ launch() }catch(err){} } },250); }
+      else setState(false,'parado');
+    };
+    launch();
+  }
+  function launch(){
+    var t=useTrack?getTrack():null;
+    try{ if(t){ rec.start(t) } else { rec.start() } }
+    catch(e){ try{ rec.start() }catch(e2){} }
+  }
+  function restart(){ try{rec.onend=null;rec.abort()}catch(e){} begin(); }
+
+  function keepAwake(on){
+    try{
+      if(on&&navigator.wakeLock){ navigator.wakeLock.request('screen').then(function(l){wake=l}).catch(function(){}) }
+      else if(wake){ wake.release(); wake=null }
+    }catch(e){}
+  }
+
+  $('go').onclick=function(){
+    if(want){
+      want=false; try{rec.abort()}catch(e){} setState(false,'parado'); keepAwake(false); return;
+    }
+    if(!SR){ setMsg('Este navegador não tem reconhecimento de voz. Abra no Chrome do Android.',true); return; }
+    if(!window.isSecureContext){ $('secure').hidden=false; $('secure').scrollIntoView({block:'center'}); return; }
+    function run(){
+      want=true; useTrack=true; setState(true,'ouvindo'); keepAwake(true);
+      setMsg('Ouvindo. Dê play no vídeo. Se o som sair pelo alto-falante, o microfone também o captura.');
+      begin();
+    }
+    /* pede a permissão do microfone antes, para o aviso aparecer de forma clara */
+    var md=navigator.mediaDevices;
+    if(md && md.getUserMedia){
+      md.getUserMedia({audio:true}).then(function(s){
+        s.getTracks().forEach(function(t){t.stop()}); run();
+      }).catch(function(){
+        setMsg('Microfone negado. Toque no cadeado ao lado do endereço, permita o microfone e tente de novo.',true);
+      });
+    } else { run(); }
+  };
+  document.addEventListener('visibilitychange',function(){ if(want&&!document.hidden) keepAwake(true) });
+
+  if(!window.isSecureContext) $('secure').hidden=false;
+  if(!SR) setMsg('Reconhecimento de voz indisponível neste navegador. Use o Chrome no Android.',true);
+})();
+</script>
+</body>
+</html>
